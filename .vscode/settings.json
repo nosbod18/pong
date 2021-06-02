@@ -1,0 +1,22 @@
+{
+    "files.associations": {
+        "system_error": "c",
+        "glfw3.h": "c",
+        "random": "c",
+        "array": "c",
+        "deque": "c",
+        "string": "c",
+        "unordered_map": "c",
+        "vector": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "ranges": "c",
+        "renderer.h": "c",
+        "util.h": "c",
+        "utility": "c",
+        "limits": "c",
+        "cstdlib": "c",
+        "algorithm": "c",
+        "ranlib.h": "c"
+    }
+}
