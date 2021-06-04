@@ -1,549 +1,491 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <string.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 
-// Misc
-//==========================================================================================================================
-#define SCREEN_W   640
-#define SCREEN_H   480
-#define SCREEN_W_2 320
-#define SCREEN_H_2 240
-
-#define BLACK 0x00000000
 #define WHITE 0xFFFFFFFF
+#define BLACK 0x00000000
 
-#define ABS(x) ((x) < 0 ? -(x) : (x))
-#define RANDOM(min, max) ((min) + ((float)rand() / ((float)RAND_MAX / ((max) - (min)))))
+#define ABS(x)  ((x) < 0 ? -(x) : (x))
+#define SIGN(x) (((x) > 0) - ((x) < 0))
 
+// Declarations
+//=======================================================================================================================
 typedef unsigned char u8;
 typedef unsigned int  u32;
 
+typedef struct Window Window;
+typedef struct Renderer Renderer;
+
+typedef struct Ball Ball;
+typedef struct Paddle Paddle;
+typedef struct Game Game;
+//=======================================================================================================================
+
+// Prototypes
+//=======================================================================================================================
+Window*     window_create(const char* title, int w, int h, u8 fullscreen);
+void        window_destroy(Window* self);
+void        window_update(Window* self);
+
+Renderer*   renderer_create(Window* window);
+void        renderer_destroy(Renderer* self);
+void        renderer_clear(Renderer* self, u32 color);
+void        renderer_draw_gameover(Renderer* self, int winner);
+void        renderer_draw_score(Renderer* self, u8 score, int side);
+void        renderer_draw_title(Renderer* self);
+void        renderer_draw_background(Renderer* self);
+void        renderer_draw_ball(Renderer* self, Ball* b);
+void        renderer_draw_paddle(Renderer* self, Paddle* p);
+void        renderer_flush(Renderer* self);
+
+void        paddle_update(Game* game);
+void        paddle_ai(Game* game, int side);
+
+void        ball_update(Game* game);
+int         ball_collision(Ball* b, Paddle* p);
+
+void        game_reset(Game* game);
+void        game_init(Game* game, u8 flags);
+void        game_run(Game* game);
+void        game_shutdown(Game* game);
+//=======================================================================================================================
+
+// Definitions
+//=======================================================================================================================
 enum
 {
-    LEFT  = 0,
-    RIGHT = 1,
-    UP    = 2,
-    DOWN  = 4
+    RIGHT   = 0,
+    LEFT    = 1,
+    UP      = 2,
+    DOWN    = 4
 };
 
-typedef union V2
-{
-    struct { int x, y; };
-    struct { int w, h; };
-} V2;
-//==========================================================================================================================
-
-// Graphics
-//==========================================================================================================================
 enum
-{
-    TEXTURE_SCREEN = 0,
-    TEXTURE_TITLE,
-    TEXTURE_SCORE,
-    TEXTURE_GAMEOVER,
-    TEXTURE_ENTITIES,
-
-    TEXTURE_LAST
-};
-
-typedef struct Window
-{
-    SDL_Window* handle;
-    SDL_Event event;
-    V2 size;
-    u8 should_close;
-} Window;
-
-typedef struct Renderer
-{
-    SDL_Renderer* handle;
-    SDL_Texture* tex[TEXTURE_LAST];
-
-    u32* raw;
-    u32  raw_size;
-} Renderer;
-//==========================================================================================================================
-
-// Game
-//==========================================================================================================================
-typedef enum State
 {
     STATE_TITLE = 0,
     STATE_PLAYING,
     STATE_GAMEOVER
-} State;
+};
 
-typedef struct Ball
+struct Window
 {
-    V2 pos;
-    V2 size;
-    V2 vel;
-} Ball;
+    SDL_Window* handle;
+    SDL_Event event;
 
-typedef struct Paddle
+    u8 keyboard[SDL_NUM_SCANCODES];
+    
+    int w, h;
+
+    double dt;
+    double last_frame;
+    double frame_timer;
+    u32 frames;
+
+    u8 should_close;
+};
+
+struct Renderer
 {
-    V2 pos;
-    V2 size;
-} Paddle;
+    SDL_Renderer* handle;
 
-typedef struct Game
+    SDL_Surface*  screen;
+    SDL_Surface*  gameover;
+    SDL_Surface*  score;
+    SDL_Surface*  title;
+
+    SDL_Texture*  screen_tex;
+};
+
+struct Ball
+{
+    int  x,  y;
+    int  w,  h;
+    int dx, dy;
+};
+
+struct Paddle
+{
+    int x, y;
+    int w, h;
+};
+
+struct Game
 {
     Window* window;
     Renderer* renderer;
 
-    Ball ball;
     Paddle paddles[2];
+    Ball ball;
 
     u8 scores[2];
-
-    State state;
-
-    double dt;
-    u8 player2;
-} Game;
-
-// Global game
-Game game;
-
-//==========================================================================================================================
-
-// V2 functions
-//==========================================================================================================================
-V2 v2(int x, int y)       { return (V2){{x, y}}; }
-
-V2 v2_add(V2 a, V2 b)     { return v2(a.x + b.x, a.y + b.y); }
-V2 v2_sub(V2 a, V2 b)     { return v2(a.x - b.x, a.y - b.y); }
-V2 v2_mul(V2 a, V2 b)     { return v2(a.x * b.x, a.y * b.y); }
-
-V2 v2_add_s(V2 a, int b)  { return v2(a.x + b, a.y + b); }
-V2 v2_sub_s(V2 a, int b)  { return v2(a.x - b, a.y - b); }
-V2 v2_mul_s(V2 a, int b)  { return v2(a.x * b, a.y * b); }
-
-V2 v2_half(V2 a)          { return v2(a.x >> 1, a.y >> 1); }
-V2 v2_abs(V2 a)           { return v2(ABS(a.x), ABS(a.y)); }
-//==========================================================================================================================
-
-// Utility functions
-//==========================================================================================================================
-int check_scores()
-{
-    if (game.scores[LEFT] == 10 || game.scores[RIGHT] == 10)
-    {
-        game.scores[LEFT] = game.scores[RIGHT] = 0;
-        return 1;
-    }
-    return 0;
-}
-//==========================================================================================================================
+    u8 multiplayer;
+    u8 state;
+    u8 time_scale;
+};
+//=======================================================================================================================
 
 // Window functions
-//==========================================================================================================================
-void window_init(const char* title, int w, int h, u8 fullscreen)
+//=======================================================================================================================
+Window* window_create(const char* title, int w, int h, u8 fullscreen)
 {
-    Window* window = game.window;
-    window = malloc(sizeof(Window));
-    SDL_assert(window);
+    Window* self = malloc(sizeof(Window));
+    SDL_assert(self);
 
-    window->handle = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_SHOWN);
-    SDL_assert(window->handle);
+    self->handle = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_SHOWN);
+    SDL_assert(self->handle);
 
-    SDL_GetWindowSize(window->handle, &window->size.w, &window->size.h);
-    window->should_close = 0;
+    memset(self->keyboard, 0, sizeof(self->keyboard));
+
+    self->w = w;
+    self->h = h;
+
+    self->dt = 0.0;
+    self->last_frame = 0.0;
+    self->frame_timer = 0.0;
+    self->frames = 0;
+
+    self->should_close = 0;
+
+    return self;
 }
 
-void window_destroy()
+void window_destroy(Window* self)
 {
-    SDL_DestroyWindow(game.window->handle);
+    SDL_DestroyWindow(self->handle);
 
-    free(game.window);
-    game.window = NULL;
+    memset(self->keyboard, 0, sizeof(self->keyboard));
+
+    free(self);
+    self = NULL;
 }
 
-void window_poll_events()
+void window_update(Window* self)
 {
     SDL_PumpEvents();
-
-    while (SDL_PollEvent(&game.window->event))
-    {
-        switch (game.window->event.type)
-        {
-            case SDL_QUIT:
-                game.window->should_close = 1;
-                break;
-
-            case SDL_KEYDOWN:
-                if (game.window->event.key.keysym.sym == SDLK_ESCAPE)
-                    game.window->should_close = 1;
-                break;
-
-            default: break;
-        }
-    }
-}
-//==========================================================================================================================
-
-// Renderer functions
-//==========================================================================================================================
-void renderer_init()
-{
-    game.renderer = malloc(sizeof(Renderer));
-    SDL_assert(game.renderer);
-
-    game.renderer->handle = SDL_CreateRenderer(game.window->handle, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
-    SDL_assert(game.renderer->handle);
-
-    game.renderer->tex[TEXTURE_SCREEN]   = SDL_CreateTexture(game.renderer->handle, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SCREEN_W, SCREEN_H);
-    game.renderer->tex[TEXTURE_TITLE]    = IMG_LoadTexture(game.renderer->handle, "res/title.png");
-    game.renderer->tex[TEXTURE_SCORE]    = IMG_LoadTexture(game.renderer->handle, "res/score.png");
-    game.renderer->tex[TEXTURE_GAMEOVER] = IMG_LoadTexture(game.renderer->handle, "res/gameover.png");
-    game.renderer->tex[TEXTURE_ENTITIES] = SDL_CreateTexture(game.renderer->handle, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
-    SDL_assert(game.renderer->tex[TEXTURE_TITLE]);
-    SDL_assert(game.renderer->tex[TEXTURE_SCORE]);
-    SDL_assert(game.renderer->tex[TEXTURE_GAMEOVER]);
-    SDL_assert(game.renderer->tex[TEXTURE_ENTITIES]);
-
-    game.renderer->raw_size = SCREEN_W * SCREEN_H * sizeof(u32);
-    game.renderer->raw = malloc(game.renderer->raw_size);
-    SDL_assert(game.renderer->raw);
-
-}
-
-void renderer_destroy()
-{
-    for (int i = 0; i < TEXTURE_LAST; ++i)
-        SDL_DestroyTexture(game.renderer->tex[i]);
-
-    SDL_DestroyRenderer(game.renderer->handle);
-
-    free(game.renderer->raw);
-    game.renderer->raw = NULL;
-
-    free(game.renderer);
-    game.renderer = NULL;
-}
-
-void renderer_clear(u32 color)
-{
-    for (u32 i = 0; i < game.renderer->raw_size; ++i)
-        game.renderer->raw[i] = color;
-}
-
-void renderer_draw_point(int x, int y)
-{
-    game.renderer->raw[y * SCREEN_W + x] = WHITE;
-}
-
-void renderer_fill_rect(V2 pos, V2 size)
-{
-    V2 min = pos;
-    V2 max = v2_add(pos, size);
-
-    for (int x = min.x; x < max.x; ++x)
-        for (int y = min.y; y < max.y; ++y)
-            renderer_draw_point(x, y);
-}
-
-void renderer_draw_ball()
-{
-    renderer_fill_rect(game.ball.pos, game.ball.size);
-}
-
-void renderer_draw_paddles()
-{
-    renderer_fill_rect(game.paddles[LEFT].pos, game.paddles[LEFT].size);
-    renderer_fill_rect(game.paddles[RIGHT].pos, game.paddles[RIGHT].size);
-}
-
-void renderer_draw_background()
-{
-    V2 pos  = v2(SCREEN_W_2 - 2, 8);
-    V2 size = v2(5, 15);
-
-	for(int i = 0; i < 16; ++i)
-    {	
-		renderer_fill_rect(pos, size);
-        pos.y += 30;
-	}
-}
-
-void renderer_draw_title()
-{
-    SDL_Rect dst;
-    dst.x = (game.window->size.w >> 1) - 40;
-	dst.y = (game.window->size.h >> 1) - 32;
-	dst.w = 80;
-	dst.h = 64;
-    SDL_RenderCopy(game.renderer->handle, game.renderer->tex[TEXTURE_TITLE], NULL, &dst);
-}
-
-void renderer_draw_scores()
-{
-    SDL_Rect src1, src2;
-    SDL_Rect dst1, dst2;
-
-    src1.x = src1.y = src2.x = src2.y = 0;
-    src1.w = src2.w = 
-
-    SDL_RenderCopy(game.renderer->handle, game.renderer->tex[TEXTURE_SCORE], &src1, &dst1);
-    SDL_RenderCopy(game.renderer->handle, game.renderer->tex[TEXTURE_SCORE], &src2, &dst2);
-}
-
-void renderer_draw_gameover(u8 winner)
-{
-    SDL_Rect src = {0, 0, 128, 37};
-    
-    if (winner != RIGHT)
-        src.h *= game.player2 ? 2 : 3;
-
-    SDL_RenderCopy(game.renderer->handle, game.renderer->tex[TEXTURE_GAMEOVER], &src, NULL);
-}
-
-void renderer_flush()
-{
-    SDL_UpdateTexture(game.renderer->tex[TEXTURE_ENTITIES], NULL, game.renderer->raw, SCREEN_W * sizeof(u32));
-    SDL_RenderCopy(game.renderer->handle, game.renderer->tex[TEXTURE_ENTITIES], NULL, NULL);
-    SDL_RenderPresent(game.renderer->handle);
-}
-//==========================================================================================================================
-
-// Paddle functions
-//==========================================================================================================================
-void paddle_move(int side, int dir)
-{
-    Paddle* p = &game.paddles[side];
-
-    if ((dir & UP) == UP)
-    {
-        p->pos.y -= 5;
-
-        if (p->pos.y < 0)
-            p->pos.y = 0;
-    }
-    
-    if ((dir & DOWN) == DOWN)
-    {
-        p->pos.y += 5;
-
-        if (p->pos.y > SCREEN_H - p->size.h)
-            p->pos.y = SCREEN_H - p->size.h;
-    }
-}
-
-void paddle_ai(int side)
-{
-    Paddle* p = &game.paddles[side];
-    Ball* b   = &game.ball;
-
-    int p_center = p->pos.y + (p->size.h >> 1);
-	int b_center = b->pos.y + (b->size.h >> 1);
-	int s_center = game.window->size.h >> 1;
-	int b_speed  = ABS(b->vel.y) + ABS(b->vel.x) * 0.25f;
-
-    // Ball is moving left
-    if (b->vel.x < 0)
-    {
-		// Ball is moving up or down
-		if (b->vel.y)
-			p->pos.y -= (b_center < p_center) ? b_speed : -b_speed;
-		else
-			p->pos.y -= (b_center < p_center) ? 5 : -5;
-    }
-    // Ball is moving right
-    else
-	{
-		// Stops the jittering
-		if (p_center < s_center - 2 || p_center > s_center + 2)
-			p->pos.y += (p_center < s_center) ? 5 : -5;
-	}
-
-    if (p->pos.y < 0)                       p->pos.y = 0;
-    if (p->pos.y > SCREEN_H - p->size.h)    p->pos.y = SCREEN_H - p->size.h;
-}
-
-void paddles_update()
-{
     const u8* keys = SDL_GetKeyboardState(NULL);
 
-    // 1 if the respective up key is pressed, 2 if the respective down key is pressed, 3 if they are both pressed
-    u8 keys_right = (keys[SDL_SCANCODE_UP] << UP) | (keys[SDL_SCANCODE_DOWN] << DOWN);
-    u8 keys_left  = (keys[SDL_SCANCODE_W]  << UP) | (keys[SDL_SCANCODE_S]    << DOWN);
+    for (int i = 0; i < SDL_NUM_SCANCODES; ++i)
+        self->keyboard[i] = keys[i];
 
-    paddle_move(RIGHT, keys_right);
+    if (self->keyboard[SDL_SCANCODE_ESCAPE])
+        self->should_close = 1;
 
-    if (game.player2)
-        paddle_move(LEFT, keys_left);
-    else
-        paddle_ai(LEFT);
+
+    self->frames++;
+    self->frame_timer += self->dt;
+    if (self->frame_timer >= 1.0)
+    {
+        char title[32];
+        snprintf(title, 31, "Pong | FPS: %u", self->frames);
+        SDL_SetWindowTitle(self->handle, title);
+        self->frame_timer -= 1.0;
+        self->frames = 0;
+    }
 }
-//==========================================================================================================================
+
+// Renderer functions
+//=======================================================================================================================
+Renderer* renderer_create(Window* window)
+{
+    Renderer* self = malloc(sizeof(Renderer));
+    SDL_assert(self);
+
+    self->handle = SDL_CreateRenderer(window->handle, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_assert(self->handle);
+
+    self->screen     = SDL_CreateRGBSurfaceWithFormat(0, window->w, window->h, 32, SDL_PIXELFORMAT_RGBA32);
+    self->gameover   = IMG_Load("res/gameover.png");
+    self->score      = IMG_Load("res/score.png");
+    self->title      = IMG_Load("res/title.png");
+    self->screen_tex = SDL_CreateTextureFromSurface(self->handle, self->screen);
+    SDL_assert(self->screen);
+    SDL_assert(self->gameover);
+    SDL_assert(self->score);
+    SDL_assert(self->title);
+    SDL_assert(self->screen_tex);
+
+    u32 colorkey = SDL_MapRGB(self->title->format, 255, 0, 255);
+	SDL_SetColorKey(self->title, SDL_TRUE, colorkey);
+	SDL_SetColorKey(self->score, SDL_TRUE, colorkey);
+
+    return self;
+}
+
+void renderer_destroy(Renderer* self)
+{
+    SDL_FreeSurface(self->screen);
+    SDL_FreeSurface(self->gameover);
+    SDL_FreeSurface(self->score);
+    SDL_FreeSurface(self->title);
+    SDL_DestroyTexture(self->screen_tex);
+
+    SDL_DestroyRenderer(self->handle);
+
+    free(self);
+    self = NULL;
+}
+
+void renderer_clear(Renderer* self, u32 color)
+{
+    SDL_RenderClear(self->handle);
+    SDL_FillRect(self->screen, NULL, color);
+}
+
+void renderer_draw_gameover(Renderer* self, int winner)
+{
+    int x = (self->screen->w >> 1) - (self->title->w >> 1);
+    int y = (self->screen->h >> 1) - (37 >> 1);
+
+    SDL_Rect src = {0, 0, self->gameover->w, winner * 37};
+    SDL_Rect dst = {x, y, src.w, src.h};
+    SDL_BlitSurface(self->gameover, &src, self->screen, &dst);
+}
+
+void renderer_draw_score(Renderer* self, u8 score, int side)
+{
+    int x = (self->screen->w >> 1) - ((side == LEFT) ? self->score->w - 12 : -12);
+
+    SDL_Rect src = {score * 3, 0, 3, self->score->h};
+    SDL_Rect dst = {x, 0, 64, 64};
+    SDL_BlitSurface(self->score, &src, self->screen, &dst);
+}
+
+void renderer_draw_title(Renderer* self)
+{
+    int x = (self->screen->w >> 1) - (self->title->w >> 1);
+    int y = (self->screen->h >> 1) - (self->title->h >> 1);
+
+    SDL_Rect src = {0, 0, self->title->w, self->title->h};
+    SDL_Rect dst = {x, y, src.w, src.h};
+    SDL_BlitSurface(self->title, &src, self->screen, &dst);
+}
+
+void renderer_draw_background(Renderer* self)
+{
+    SDL_Rect src = {self->screen->w >> 1, 15, 5, 15};
+
+    for (int i = 0; i < 15; ++i)
+    {
+        SDL_FillRect(self->screen, &src, WHITE);
+        src.y += 30;
+    }
+}
+
+void renderer_draw_ball(Renderer* self, Ball* b)
+{
+    SDL_Rect src = {b->x, b->y, b->w, b->h};
+    SDL_FillRect(self->screen, &src, WHITE);
+}
+
+void renderer_draw_paddle(Renderer* self, Paddle* p)
+{
+    SDL_Rect src = {p->x, p->y, p->w, p->h};
+    SDL_FillRect(self->screen, &src, WHITE);
+}
+
+void renderer_flush(Renderer* self)
+{
+    SDL_UpdateTexture(self->screen_tex, NULL, self->screen->pixels, self->screen->pitch);
+    SDL_RenderCopy(self->handle, self->screen_tex, NULL, NULL);
+    SDL_RenderPresent(self->handle);
+
+    renderer_clear(self, BLACK);
+}
+//=======================================================================================================================
+
+// Paddle functions
+//=======================================================================================================================
+void paddle_update(Game* game)
+{
+    u8* keyboard = game->window->keyboard;
+
+    if (keyboard[SDL_SCANCODE_UP])   game->paddles[RIGHT].y -= 5;
+    if (keyboard[SDL_SCANCODE_DOWN]) game->paddles[RIGHT].y += 5;
+
+    if (game->multiplayer)
+    {
+        if (keyboard[SDL_SCANCODE_W])    game->paddles[LEFT].y -= 5;
+        if (keyboard[SDL_SCANCODE_S])    game->paddles[LEFT].y += 5;
+    }
+    else
+    {
+        Ball* b = &game->ball;
+        Paddle* p = &game->paddles[LEFT];
+        int p_center = p->y + (p->h >> 1);
+        int b_center = b->y + (b->h >> 1);
+        int s_center = game->window->h >> 1;
+        int b_speed = ABS(b->dy) + ABS(b->dx) * 0.05f;
+
+        // Ball is moving left
+        if (b->dx < 0)
+        {
+            // I wanted to see if i could make this as compact as possible, I think i succeeded :)
+            p->y -= (b->dy ? b_speed : 5) * (b_center < p_center ? 1 : -1);
+        }
+        // Ball is moving right
+        else
+        {
+            // Stops the jittering
+            if (p_center < s_center - 2 || p_center > s_center + 2)
+                p->y += (p_center < s_center) ? 5 : -5;
+        }  
+    }
+}
+//=======================================================================================================================
 
 // Ball functions
-//==========================================================================================================================
-int ball_collide_with(Paddle* p)
+//=======================================================================================================================
+int ball_collision(Ball* b, Paddle* p)
 {
-    Ball* b = &game.ball;
-
-    V2 bmax = v2_add(b->pos, v2_half(b->size));
-    V2 pmax = v2_add(p->pos, v2_half(p->size));
-
-    if(bmax.x < p->pos.x || b->pos.x > pmax.x) return 0;
-    if(bmax.y < p->pos.y || b->pos.y > pmax.y) return 0;
-
+    if (b->x >= p->x + p->w || p->x >= b->x + b->w) return 0;
+    if (b->y >= p->y + p->h || p->y >= b->y + b->h) return 0;
+ 
     return 1;
 }
 
-void ball_update()
+void ball_update(Game* game)
 {
-    Ball* b = &game.ball;
-    b->pos = v2_add(b->pos, b->vel);
+    Ball* b = &game->ball;
+
+    b->x += b->dx;
+    b->y += b->dy;
+
+    if (b->y < 0 || b->y > game->window->h - b->h)
+    {
+        b->dy = -b->dy;
+    }
+
+    if (b->x < 0)
+    {
+        game->scores[RIGHT]++;
+        game_reset(game);
+    }
+    else if (b->x > game->window->w - b->w)
+    {
+        game->scores[LEFT]++;
+        game_reset(game);
+    }
 
     for (int i = 0; i < 2; ++i)
     {
-        if (ball_collide_with(&game.paddles[i]))
+        if (ball_collision(b, &game->paddles[i]))
         {
-            b->vel.x += b->vel.x < 0 ? -1 : 1;
-            b->vel.x = -b->vel.x;
-
-            // Positive if the ball hits below the paddle's center, negative if above
-            int hit_pos = (b->pos.y + (b->size.h >> 1)) - (game.paddles[i].pos.y + (game.paddles[i].size.h >> 1));
-
-            b->vel.y = hit_pos / 7;
+            // Negative if the ball's center hit above the paddles's center, positive if below
+            int hit_pos = (game->paddles[i].y + game->paddles[i].h) - b->y;
+            b->dy = hit_pos / 7;
+            b->dx += (b->dx > 0) ? -(b->dx + 1) : -(b->dx - 1);
         }
     }
 }
-//==========================================================================================================================
+//=======================================================================================================================
+
 
 // Game functions
-//==========================================================================================================================
-void game_reset()
+//=======================================================================================================================
+int check_scores(Game* game)
 {
-    game.ball           = (Ball){v2(SCREEN_W_2 - 5, SCREEN_H_2 - 5), v2(10, 10), v2(1, RANDOM(0.0f, 1.0f) > 0.5f ? 1 : -1)};
-    game.paddles[LEFT]  = (Paddle){v2(20, SCREEN_H_2 - 50), v2(10, 50)};
-    game.paddles[RIGHT] = (Paddle){v2(SCREEN_W - 30, SCREEN_H_2 - 50), v2(10, 50)};
-    game.scores[LEFT]   = 0;
-    game.scores[RIGHT]  = 0;
+    if (game->scores[LEFT] == 10)
+        return 0;
+    else if (game->scores[RIGHT] == 10)
+        return (game->multiplayer) ? 1 : 2;
+    else
+        return -1;
 }
 
-void game_render()
+void game_reset(Game* game)
 {
-    renderer_draw_ball();
-    renderer_draw_paddles();
-
-    if (game.state == STATE_TITLE)
-    {
-        renderer_draw_title();
-    }
-    else if (game.state == STATE_PLAYING)
-    {
-        renderer_draw_background();
-        renderer_draw_scores();
-    }
-    else if (game.state == STATE_GAMEOVER)
-    {
-        renderer_draw_gameover(game.scores[LEFT] == 10 ? LEFT : RIGHT);
-    }
-
-    SDL_UpdateTexture(game.renderer->tex[TEXTURE_ENTITIES], NULL, game.renderer->raw, SCREEN_W * sizeof(u32));
-    SDL_RenderCopy(game.renderer->handle, game.renderer->tex[TEXTURE_ENTITIES], NULL, NULL);
-    SDL_RenderPresent(game.renderer->handle);
+    game->paddles[RIGHT] = (Paddle){game->window->w - 30, (game->window->h >> 1) - 50, 10, 50};
+    game->paddles[LEFT]  = (Paddle){20, (game->window->h >> 1) - 50, 10, 50};
+    game->ball           = (Ball){game->window->w >> 1, game->window->h >> 1, 10, 10, 1, 1};
+    game->scores[RIGHT]  = 0;
+    game->scores[LEFT]   = 0;
 }
 
-void game_init(int argc, char** argv)
+void game_init(Game* game, u8 flags)
 {
     SDL_assert(SDL_Init(SDL_INIT_VIDEO) == 0);
-
-    u8 fullscreen = 0;
-    game.player2 = 0;
-    
-    for (int i = 0; i < argc; ++i)
-    {
-        if (strcmp("-f", argv[i]) == 0) fullscreen = 1;
-        if (strcmp("-m", argv[i]) == 0) game.player2 = 1;
-    }
-
-    window_init("Pong | FPS: ", SCREEN_W, SCREEN_H, fullscreen);
-    renderer_init();
-
-
-    game_reset();
-
-    game.state = STATE_TITLE;
-    game.dt = 1.0 / 60.0; // Target FPS = 60
+    game->window = window_create("Pong | FPS: 0", 640, 480, ((flags & 1) == 1));
+    game->renderer = renderer_create(game->window);
+    game->multiplayer = ((flags & 2) == 2);
+    game->state = STATE_TITLE;
+    game_reset(game);
 }
 
-void game_run()
+void game_run(Game* game)
 {
-    u32 frames = 0;
-    double last_frame = 0.0;
-    double frame_timer = 0.0;
+    Window* window = game->window;
+    Renderer* renderer = game->renderer;
 
-    while (!game.window->should_close)
+    while (!window->should_close)
     {
         const double now = (double)SDL_GetTicks();
-        const double elapsed_ms = now - last_frame;
-        last_frame = now;
+        const double elapsed_ms = now - window->last_frame;
+        window->last_frame = now;
 
         // Frame time in seconds
-        const double dt = elapsed_ms / 1000.0;
+        window->dt = elapsed_ms / 1000.0;
 
-        if (game.state == STATE_TITLE)
+        if (game->state == STATE_TITLE)
         {
-            const u8* keys = SDL_GetKeyboardState(NULL);
+            renderer_draw_title(renderer);
+            
+            if (game->window->keyboard[SDL_SCANCODE_SPACE])
+                game->state = STATE_PLAYING;
 
-            ball_update();
-            paddle_ai(LEFT);
-            paddle_ai(RIGHT);
-
-            if (keys[SDL_SCANCODE_SPACE]) 
-                game.state = STATE_PLAYING;
         }
-        else if (game.state == STATE_PLAYING)
+        else if (game->state == STATE_PLAYING)
         {
-            paddles_update();
-            ball_update();
+            ball_update(game);
+            paddle_update(game);
 
-            if (check_scores())
-                game.state = STATE_GAMEOVER;
+            renderer_draw_ball(renderer, &game->ball);
+            renderer_draw_paddle(renderer, &game->paddles[RIGHT]);
+            renderer_draw_paddle(renderer, &game->paddles[LEFT]);
+            renderer_draw_score(renderer, game->scores[RIGHT], RIGHT);
+            renderer_draw_score(renderer, game->scores[LEFT], LEFT);
+            renderer_draw_background(renderer);
+
+            if (check_scores(game) >= 0)
+                game->state = STATE_GAMEOVER;
+
         }
-        else if (game.state == STATE_GAMEOVER)
+        else if (game->state == STATE_GAMEOVER)
         {
-            const u8* keys = SDL_GetKeyboardState(NULL);
+            renderer_draw_gameover(renderer, check_scores(game));
 
-            if (keys[SDL_SCANCODE_R])
+            if (game->window->keyboard[SDL_SCANCODE_R])
             {
-                game_reset();
-                game.state = STATE_PLAYING;
+                game_reset(game);
+                game->state = STATE_PLAYING;
             }
         }
 
-        game_render();
-        window_poll_events();
-
-        frame_timer += dt;
-        frames++;
-        if (frame_timer >= 1.0)
-        {
-            char title[32];
-            snprintf(title, 31, "Pong | FPS: %u", frames);
-            SDL_SetWindowTitle(game.window->handle, title);
-            frame_timer -= 1.0;
-            frames = 0;
-        }
+        renderer_flush(renderer);
+        window_update(window);
     }
 }
 
-void game_shutdown()
+void game_shutdown(Game* game)
 {
-    renderer_destroy();
-    window_destroy();
+    renderer_destroy(game->renderer);
+    window_destroy(game->window);
     SDL_Quit();
 }
 
 int main(int argc, char** argv)
 {
-    game_init(argc, argv);
-    game_run();
-    game_shutdown();
+    Game game;
+
+    u8 flags = 0;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (strcmp("-f", argv[i]) == 0) flags |= 1;
+        if (strcmp("-m", argv[i]) == 0) flags |= 2;
+    }
+
+    game_init(&game, flags);
+    game_run(&game);
+    game_shutdown(&game);
 }
-//==========================================================================================================================
+//=======================================================================================================================
