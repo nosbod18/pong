@@ -17,6 +17,8 @@
         "limits": "c",
         "cstdlib": "c",
         "algorithm": "c",
-        "ranlib.h": "c"
+        "ranlib.h": "c",
+        "string.h": "c",
+        "stdlib.h": "c"
     }
 }
