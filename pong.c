@@ -6,10 +6,13 @@
 #define WHITE 0xFFFFFFFF
 #define BLACK 0x00000000
 
-#define ABS(x)  ((x) < 0 ? -(x) : (x))
+#define ABS(x) ((x) < 0 ? -(x) : (x))
+#define CLAMP(x, lo, hi) ((lo) > (x) ? (lo) : ((hi) < (x) ? (hi) : (x)))
 
-// Typedefs
-//=======================================================================================================================
+/************************************
+ * Typedefs
+*************************************/
+
 typedef unsigned char u8;
 typedef unsigned int  u32;
 
@@ -19,10 +22,11 @@ typedef struct Renderer Renderer;
 typedef struct Ball Ball;
 typedef struct Paddle Paddle;
 typedef struct Game Game;
-//=======================================================================================================================
 
-// Prototypes
-//=======================================================================================================================
+/************************************************
+ * Prototypes
+*************************************************/
+
 Window*     window_create(const char* title, int w, int h, u8 fullscreen);
 void        window_destroy(Window* self);
 void        window_update(Window* self);
@@ -47,10 +51,12 @@ void        game_render(Game* game);
 void        game_init(Game* game, u8 flags);
 void        game_run(Game* game);
 void        game_shutdown(Game* game);
-//=======================================================================================================================
 
-// Definitions
-//=======================================================================================================================
+
+/************************************************
+ * Definitions
+*************************************************/
+
 enum
 {
     RIGHT   = 0,
@@ -68,24 +74,19 @@ enum
 
 struct Window
 {
-    SDL_Window* handle;
+    SDL_Window* window;
     SDL_Event event;
 
     u8 keyboard[SDL_NUM_SCANCODES];
     
     int w, h;
 
-    double dt;
-    double last_frame;
-    double frame_timer;
-    u32 frames;
-
     u8 should_close;
 };
 
 struct Renderer
 {
-    SDL_Renderer* handle;
+    SDL_Renderer* renderer;
 
     SDL_Surface*  screen;
     SDL_Surface*  gameover;
@@ -120,146 +121,134 @@ struct Game
     u8 multiplayer;
     u8 state;
 };
-//=======================================================================================================================
 
-// Window functions
-//=======================================================================================================================
-Window* window_create(const char* title, int w, int h, u8 fullscreen)
+
+/************************************************
+ * Window functions
+*************************************************/
+
+Window* window_create(const char* title, int width, int height, u8 fullscreen)
 {
-    Window* self = malloc(sizeof(Window));
-    SDL_assert(self);
+    Window* window = malloc(sizeof(Window));
+    SDL_assert(window);
 
-    self->handle = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_SHOWN);
-    SDL_assert(self->handle);
+    window->window = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_SHOWN);
+    SDL_assert(window->window);
 
-    memset(self->keyboard, 0, sizeof(self->keyboard));
+    memset(window->keyboard, 0, sizeof(window->keyboard));
 
-    self->w = w;
-    self->h = h;
+    window->w = width;
+    window->h = height;
 
-    self->dt = 0.0;
-    self->last_frame = 0.0;
-    self->frame_timer = 0.0;
-    self->frames = 0;
+    window->should_close = 0;
 
-    self->should_close = 0;
-
-    return self;
+    return window;
 }
 
-void window_destroy(Window* self)
+void window_destroy(Window* window)
 {
-    SDL_DestroyWindow(self->handle);
+    SDL_DestroyWindow(window->window);
 
-    memset(self->keyboard, 0, sizeof(self->keyboard));
+    memset(window->keyboard, 0, sizeof(window->keyboard));
 
-    free(self);
-    self = NULL;
+    free(window);
+    window = NULL;
 }
 
-void window_update(Window* self)
+void window_update(Window* window)
 {
     SDL_PumpEvents();
     const u8* keys = SDL_GetKeyboardState(NULL);
 
-    memcpy(self->keyboard, keys, SDL_NUM_SCANCODES);
+    memcpy(window->keyboard, keys, SDL_NUM_SCANCODES);
 
-    if (self->keyboard[SDL_SCANCODE_ESCAPE])
-        self->should_close = 1;
-
-
-    self->frames++;
-    self->frame_timer += self->dt;
-    if (self->frame_timer >= 1.0)
-    {
-        char title[32];
-        snprintf(title, 31, "Pong – FPS: %u", self->frames);
-        SDL_SetWindowTitle(self->handle, title);
-        self->frame_timer -= 1.0;
-        self->frames = 0;
-    }
+    if (window->keyboard[SDL_SCANCODE_ESCAPE])
+        window->should_close = 1;
 }
 
-// Renderer functions
-//=======================================================================================================================
+
+/************************************************
+ * Renderer functions
+*************************************************/
+
 Renderer* renderer_create(Window* window)
 {
-    Renderer* self = malloc(sizeof(Renderer));
-    SDL_assert(self);
+    Renderer* renderer = malloc(sizeof(Renderer));
+    SDL_assert(renderer);
 
-    self->handle = SDL_CreateRenderer(window->handle, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    SDL_assert(self->handle);
+    renderer->renderer = SDL_CreateRenderer(window->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_assert(renderer->renderer);
 
-    self->screen   = SDL_CreateRGBSurfaceWithFormat(0, window->w, window->h, 32, SDL_PIXELFORMAT_RGBA32);
-    self->gameover = IMG_Load("res/gameover.png");
-    self->score    = IMG_Load("res/score.png");
-    self->title    = IMG_Load("res/title.png");
-    self->buffer   = SDL_CreateTextureFromSurface(self->handle, self->screen);
-    SDL_assert(self->screen);
-    SDL_assert(self->gameover);
-    SDL_assert(self->score);
-    SDL_assert(self->title);
-    SDL_assert(self->buffer);
+    renderer->screen   = SDL_CreateRGBSurfaceWithFormat(0, window->w, window->h, 32, SDL_PIXELFORMAT_RGBA32);
+    renderer->gameover = IMG_Load("res/gameover.png");
+    renderer->score    = IMG_Load("res/score.png");
+    renderer->title    = IMG_Load("res/title.png");
+    renderer->buffer   = SDL_CreateTextureFromSurface(renderer->renderer, renderer->screen);
+    SDL_assert(renderer->screen);
+    SDL_assert(renderer->gameover);
+    SDL_assert(renderer->score);
+    SDL_assert(renderer->title);
+    SDL_assert(renderer->buffer);
 
-    return self;
+    return renderer;
 }
 
-void renderer_destroy(Renderer* self)
+void renderer_destroy(Renderer* renderer)
 {
-    SDL_FreeSurface(self->screen);
-    SDL_FreeSurface(self->gameover);
-    SDL_FreeSurface(self->score);
-    SDL_FreeSurface(self->title);
-    SDL_DestroyTexture(self->buffer);
+    SDL_FreeSurface(renderer->screen);
+    SDL_FreeSurface(renderer->gameover);
+    SDL_FreeSurface(renderer->score);
+    SDL_FreeSurface(renderer->title);
+    SDL_DestroyTexture(renderer->buffer);
 
-    SDL_DestroyRenderer(self->handle);
+    SDL_DestroyRenderer(renderer->renderer);
 
-    free(self);
-    self = NULL;
+    free(renderer);
+    renderer = NULL;
 }
 
-void renderer_clear(Renderer* self, u32 color)
+void renderer_clear(Renderer* renderer, u32 color)
 {
-    SDL_RenderClear(self->handle);
-    SDL_FillRect(self->screen, NULL, color);
+    SDL_RenderClear(renderer->renderer);
+    SDL_FillRect(renderer->screen, NULL, color);
 }
 
-void renderer_draw_title(Renderer* self)
+void renderer_draw_title(Renderer* renderer)
 {
-    int x = (self->screen->w >> 1) - (self->title->w * 1.5f);
-    int y = (self->screen->h >> 1) - (self->title->h * 1.5f);
+    int x = (renderer->screen->w >> 1) - (renderer->title->w * 1.5f);
+    int y = (renderer->screen->h >> 1) - (renderer->title->h * 1.5f);
 
-    SDL_Rect src = {0, 0, self->title->w, self->title->h};
+    SDL_Rect src = {0, 0, renderer->title->w, renderer->title->h};
     SDL_Rect dst = {x, y, src.w * 3, src.h * 3};
-    SDL_BlitScaled(self->title, &src, self->screen, &dst);
+    SDL_BlitScaled(renderer->title, &src, renderer->screen, &dst);
 }
 
-void renderer_draw_score(Renderer* self, u8 scores[], int side)
+void renderer_draw_score(Renderer* renderer, u8 scores[], int side)
 {
-    int x_left  = (self->screen->w >> 1) - 50 - 35;
-    int x_right = (self->screen->w >> 1) + 50;
+    int x_left  = (renderer->screen->w >> 1) - 50 - 35;
+    int x_right = (renderer->screen->w >> 1) + 50;
 
     SDL_Rect src = {(scores[side] % 10) * 3, 0, 3, 5};
     SDL_Rect dst = {side == LEFT ? x_left : x_right, 0, 35, 100};
-    SDL_BlitScaled(self->score, &src, self->screen, &dst);
+    SDL_BlitScaled(renderer->score, &src, renderer->screen, &dst);
 }
 
-void renderer_draw_gameover(Renderer* self, int winner)
+void renderer_draw_gameover(Renderer* renderer, int winner)
 {
-    int x = (self->screen->w >> 1) - 212;
-    int y = (self->screen->h >> 1) - 48;
+    int x = (renderer->screen->w >> 1) - 212;
+    int y = (renderer->screen->h >> 1) - 48;
     
-    SDL_Rect src = {0, winner * 32, self->gameover->w, 32};
+    SDL_Rect src = {0, winner * 32, renderer->gameover->w, 32};
     SDL_Rect dst = {x, y, src.w << 2, src.h << 2};
-    SDL_BlitScaled(self->gameover, &src, self->screen, &dst);
+    SDL_BlitScaled(renderer->gameover, &src, renderer->screen, &dst);
 }
 
-void renderer_draw_background(Renderer* self)
+void renderer_draw_background(Renderer* renderer)
 {
-    SDL_Rect src = {(self->screen->w >> 1) - 3, 10, 6, 15};
+    SDL_Rect src = {(renderer->screen->w >> 1) - 3, 10, 6, 15};
 
-    for ( ; src.y <= self->screen->h; src.y += 30)
-        SDL_FillRect(self->screen, &src, WHITE);
+    for ( ; src.y <= renderer->screen->h; src.y += 30)
+        SDL_FillRect(renderer->screen, &src, WHITE);
 }
 
 void renderer_draw_ball(Renderer* self, Ball* b)
@@ -268,22 +257,24 @@ void renderer_draw_ball(Renderer* self, Ball* b)
     SDL_FillRect(self->screen, &src, WHITE);
 }
 
-void renderer_draw_paddle(Renderer* self, Paddle* p)
+void renderer_draw_paddle(Renderer* renderer, Paddle* p)
 {
     SDL_Rect src = {p->x, p->y, p->w, p->h};
-    SDL_FillRect(self->screen, &src, WHITE);
+    SDL_FillRect(renderer->screen, &src, WHITE);
 }
 
-void renderer_flush(Renderer* self)
+void renderer_flush(Renderer* renderer)
 {
-    SDL_UpdateTexture(self->buffer, NULL, self->screen->pixels, self->screen->pitch);
-    SDL_RenderCopy(self->handle, self->buffer, NULL, NULL);
-    SDL_RenderPresent(self->handle);
+    SDL_UpdateTexture(renderer->buffer, NULL, renderer->screen->pixels, renderer->screen->pitch);
+    SDL_RenderCopy(renderer->renderer, renderer->buffer, NULL, NULL);
+    SDL_RenderPresent(renderer->renderer);
 }
-//=======================================================================================================================
 
-// Game functions
-//=======================================================================================================================
+
+/************************************************
+ * Entity functions
+*************************************************/
+
 void paddle_update(Game* game)
 {
     Ball* b = &game->ball;
@@ -323,13 +314,8 @@ void paddle_update(Game* game)
     }
 
     // Keep paddles on the screen
-    int max = game->window->h - rp->h;
-
-    if (rp->y < 0)          rp->y = 0;
-    else if (rp->y > max)   rp->y = max;
-
-    if (lp->y < 0)          lp->y = 0;
-    else if (lp->y > max)   lp->y = max;
+    rp->y = CLAMP(rp->y, 0, game->window->h - rp->h);
+    lp->y = CLAMP(lp->y, 0, game->window->h - lp->h);
 }
 
 void ball_update(Game* game)
@@ -378,7 +364,10 @@ int ball_collision(Ball* b, Paddle* p)
     return 1;
 }
 
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+/************************************************
+ * Game functions
+*************************************************/
 
 int check_scores(Game* game)
 {
@@ -436,10 +425,10 @@ void game_render(Game* game)
 void game_init(Game* game, u8 flags)
 {
     SDL_assert(SDL_Init(SDL_INIT_VIDEO) == 0);
-    game->window = window_create("Pong – FPS: 0", 640, 480, (flags & 1));
-    game->renderer = renderer_create(game->window);
+    game->window      = window_create("Pong", 640, 480, (flags & 1));
+    game->renderer    = renderer_create(game->window);
     game->multiplayer = (flags & 2);
-    game->state = STATE_TITLE;
+    game->state       = STATE_TITLE;
     game_reset(game);
 }
 
@@ -449,13 +438,6 @@ void game_run(Game* game)
 
     while (!window->should_close)
     {
-        const double now = (double)SDL_GetTicks();
-        const double elapsed_ms = now - window->last_frame;
-        window->last_frame = now;
-
-        // Frame time in seconds
-        window->dt = elapsed_ms / 1000.0;
-
         switch (game->state)
         {
             case STATE_TITLE:
@@ -496,6 +478,11 @@ void game_shutdown(Game* game)
     SDL_Quit();
 }
 
+
+/************************************************
+ * Main
+*************************************************/
+
 int main(int argc, char** argv)
 {
     Game game;
@@ -511,4 +498,3 @@ int main(int argc, char** argv)
     game_run(&game);
     game_shutdown(&game);
 }
-//=======================================================================================================================
