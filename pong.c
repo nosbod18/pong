@@ -371,9 +371,18 @@ int ball_collision(Ball* b, Paddle* p)
 
 int check_scores(Game* game)
 {
-    if (game->scores[LEFT] == 10)  return 1;
-    if (game->scores[RIGHT] == 10) return 0;
-    
+    if (game->scores[RIGHT] == 10)
+    {
+        return 0;
+    }
+    if (game->scores[LEFT] == 10)
+    {
+        if (game->multiplayer)
+            return 1;
+        else 
+            return 2;
+    }
+
     return -1;
 }
 
@@ -398,7 +407,6 @@ void game_render(Game* game)
 
         case STATE_PLAYING:
             renderer_draw_ball(renderer, &game->ball);
-
             renderer_draw_paddle(renderer, &game->paddles[RIGHT]);
             renderer_draw_paddle(renderer, &game->paddles[LEFT]);
             renderer_draw_score(renderer, game->scores, RIGHT);
@@ -408,12 +416,6 @@ void game_render(Game* game)
 
         case STATE_GAMEOVER:
             renderer_draw_gameover(renderer, check_scores(game));
-
-            renderer_draw_paddle(renderer, &game->paddles[RIGHT]);
-            renderer_draw_paddle(renderer, &game->paddles[LEFT]);
-            renderer_draw_score(renderer, game->scores, RIGHT);
-            renderer_draw_score(renderer, game->scores, LEFT);
-            renderer_draw_background(renderer);
             break;
         
         default: break;
@@ -468,6 +470,11 @@ void game_run(Game* game)
 
         game_render(game);
         window_update(window);
+
+        if (window->keyboard[SDL_SCANCODE_P])
+        {
+            game->scores[LEFT] = 9;
+        }
     }
 }
 
