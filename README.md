@@ -1,6 +1,6 @@
 # Pong
 
-Simple pong clone made in C with SDL2.
+Simple pong clone made in C using SDL2.
 
 ## Dependencies
 - SDL2
